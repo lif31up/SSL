@@ -1,7 +1,7 @@
 import torchvision as tv
 
 
-def get_transform_MNIST_10(input_size=135):
+def get_transform_MNIST(input_size=90):
   return tv.transforms.Compose([
     # 1. Augmentation for better generalization
     tv.transforms.RandomResizedCrop(input_size, scale=(0.8, 1.0)),

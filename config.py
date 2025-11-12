@@ -1,13 +1,13 @@
 from torch import nn
 
-# path vars
-TEACH_SAVE_TO = "./vit.bin"
-TEACH_LOAD_FROM = "./vit.bin"
-STNDT_SAVE_TO = "./student.bin"
-STNDT_LOAD_FROM = "./student.bin"
 
-class Config:
-  def __init__(self, is_teacher=False):
+BASE_SAVE_TO = "bins/baseViT.bin"
+BASE_LOAD_FROM = "bins/baseViT.bin"
+PRETRAINED_SAVE_TO = "bins/pretrainedViT.bin"
+PRETRAINED_FROM = "bins/pretrainedViT.bin"
+
+class BaseConfig:
+  def __init__(self):
     self.iters = 50
     self.batch_size = 16
     self.dataset_len, self.testset_len = 1000, 500
@@ -31,9 +31,17 @@ class Config:
     self.mask_prob = 0.3
     self.init_weights = init_weights
 
-    self.masking_value = -1e-9
+    self.mask_val = -1e-9
+    self.mask_ratio = 768
   # __init__
 # Config
+
+class AdapterConfig(BaseConfig):
+  def __init__(self):
+    super().__init__()
+    self.output_dim = 10
+  # __init__()
+# AdapterConfig
 
 def init_weights(m):
   if isinstance(m, nn.Linear):

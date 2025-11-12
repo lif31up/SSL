@@ -3,15 +3,15 @@ from torch import nn
 from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from Embedder import load_MNIST_10, Embedder
-from Masker import Masker
-from config import Config, TEACH_SAVE_TO
+from Embedder import load_MNIST, Embedder
+from config import BaseConfig, AdapterConfig, PRETRAINED_SAVE_TO, BASE_LOAD_FROM
 from evaluate import evaluate
-from model.ViT import ViT
-from utils import get_transform_MNIST_10
+from model.Adapter import Adapter
+from model.ViTBase import ViTBase
+from utils import get_transform_MNIST
 
 
-def train(model:nn.Module, path: str, config: Config, trainset, device):
+def train(model:nn.Module, path: str, config, trainset, device):
   model.to(device)
   model.train()
 
@@ -41,39 +41,22 @@ def train(model:nn.Module, path: str, config: Config, trainset, device):
   torch.save(features, f"{path}")
 # train
 
-PRETRAINING = True
 
 # TRANSFER LEARNING ON BASELINE MODEL
-if __name__ == "__main__" and not PRETRAINING:
-  config = Config()
+if __name__ == "__main__":
+  base_config = BaseConfig()
+  adapter_config = AdapterConfig()
   device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-  # load dataset, transform from folder
-  mnist_10_transform = get_transform_MNIST_10(input_size=90)
-  trainset, testset = load_MNIST_10(path='./data', transform=mnist_10_transform)
-  # embed dataset (3 times 3 patches)
-  trainset = Embedder(dataset=trainset, config=config).consolidate()
-  config.dummy = trainset.__getitem__(0)[0]
-  trainset = DataLoader(dataset=trainset, batch_size=config.batch_size)
-  testset = Embedder(dataset=testset, config=config).consolidate()
-  testset = DataLoader(dataset=testset, batch_size=config.batch_size)
-  model = ViT(config=config)
-  train(model=model, path=TEACH_SAVE_TO, config=config, trainset=trainset, device=device)
-  evaluate(model=model, dataset=testset, device=device)
-# if __name__ == "__main__":
-
-# PRETRAINING
-if __name__ == "__main__" and PRETRAINING:
-  config = Config()
-  device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-  # load dataset, transform from folder
-  mnist_10_transform = get_transform_MNIST_10(input_size=90)
-  trainset, testset = load_MNIST_10(path='./data', transform=mnist_10_transform)
-  # embed dataset (3 times 3 patches)
-  trainset = Masker(dataset=trainset, config=config).consolidate()
-  config.dummy = trainset.__getitem__(0)[0]
-  trainset = DataLoader(dataset=trainset, batch_size=config.batch_size)
-  # testset = Embedder(dataset=testset, config=config).consolidate()
-  # testset = DataLoader(dataset=testset, batch_size=config.batch_size)
-  model = ViT(config=config)
-  train(model=model, path=TEACH_SAVE_TO, config=config, trainset=trainset, device=device)
+  mnist_10_transform = get_transform_MNIST(input_size=90)
+  traindata, testdata = load_MNIST(path='./data', transform=mnist_10_transform, len=(10000, 1000))
+  trainset = Embedder(dataset=traindata, config=base_config).consolidate()
+  base_config.dummy = trainset.__getitem__(0)[0]
+  trainloader = DataLoader(dataset=trainset, batch_size=base_config.batch_size)
+  testset = Embedder(dataset=testdata, config=base_config).consolidate()
+  testloader = DataLoader(dataset=testset, batch_size=base_config.batch_size)
+  data = torch.load(f=f"{BASE_LOAD_FROM}", weights_only=False, map_location=device)
+  base = ViTBase(base_config).load_state_dict(data['state'])
+  model = Adapter(config=adapter_config, base=base)
+  train(model=model, path=PRETRAINED_SAVE_TO, config=adapter_config, trainset=trainloader, device=device)
+  evaluate(model=model, dataset=testloader, device=device)
 # if __name__ == "__main__":

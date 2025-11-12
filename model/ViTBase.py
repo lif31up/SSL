@@ -1,19 +1,19 @@
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
-from Embedder import load_MNIST_10, Embedder
-from config import Config
-from utils import get_transform_MNIST_10
+from Embedder import load_MNIST, Embedder
+from config import BaseConfig
+from utils import get_transform_MNIST
 
 
-class ViT(nn.Module):
+class ViTBase(nn.Module):
   def __init__(self, config):
-    super(ViT, self).__init__()
+    super(ViTBase, self).__init__()
     self.config = config
     self.stacks = nn.ModuleList([EncoderStack(self.config) for _ in range(config.n_stacks)])
     self.flatten = nn.Flatten(start_dim=1)
     self.cls = nn.Parameter(torch.zeros(config.dim))
-    self.fc = self._get_fc(self.config.dummy).apply(self.config.init_weights)
+    # self.fc = self._get_fc(self.config.dummy).apply(self.config.init_weights)
   # __init__
 
   def add_cls(self, x):
@@ -25,7 +25,8 @@ class ViT(nn.Module):
   def forward(self, x):
     x = self.add_cls(x)
     for stack in self.stacks: x = stack(x)
-    return self.fc(self.flatten(x))
+    return self.flatten(x[:, 1:, :])
+    # return self.fc(self.flatten(x))
   # forward
 
   def _get_fc(self, dummy):
@@ -91,10 +92,10 @@ class MultiHeadAttention(nn.Module):
 # MultiHeadAttention
 
 if __name__ == "__main__":
-  config = Config()
+  config = BaseConfig()
   # load dataset, transform from folder
-  mnist_10_transform = get_transform_MNIST_10(input_size=225)
-  trainset, testset = load_MNIST_10(path='./data', transform=mnist_10_transform)
+  mnist_10_transform = get_transform_MNIST(input_size=225)
+  trainset, testset = load_MNIST(path='./data', transform=mnist_10_transform)
 
   # embed dataset (3 times 3 patches)
   trainset = Embedder(dataset=trainset, config=config).consolidate()
@@ -102,7 +103,7 @@ if __name__ == "__main__":
   trainset = DataLoader(dataset=trainset, batch_size=config.batch_size)
 
   # init model
-  model = ViT(config=config)
+  model = ViTBase(config=config)
   model.get_fc(dummy=config.dummy)
 
   print(f'model: {model}')

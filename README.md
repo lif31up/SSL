@@ -25,16 +25,16 @@ tqdm>=4.67.1
 ```
 
 ### Configuration
-`confing.py` contains the configuration settings for the model, including the number of heads, dimensions, learning rate, and other hyperparameters.
+`confing.py` contains the configurations settings for the two model (adapter and ViT), including the number of heads, dimensions, learning rate, and other hyperparameters.
 
 ```python
-TEACH_SAVE_TO = "./vit.bin"
-TEACH_LOAD_FROM = "./vit.bin"
-STNDT_SAVE_TO = "./student.bin"
-STNDT_LOAD_FROM = "./student.bin"
+BASE_SAVE_TO = "bins/baseViT.bin"
+BASE_LOAD_FROM = "bins/baseViT.bin"
+PRETRAINED_SAVE_TO = "bins/pretrainedViT.bin"
+PRETRAINED_FROM = "bins/pretrainedViT.bin"
 
-class Config:
-  def __init__(self, is_teacher=False):
+class BaseConfig:
+  def __init__(self):
     self.iters = 50
     self.batch_size = 16
     self.dataset_len, self.testset_len = 1000, 500
@@ -57,68 +57,71 @@ class Config:
     self.clip_grad = False
     self.mask_prob = 0.3
     self.init_weights = init_weights
+
+    self.mask_val = -1e-9
+    self.mask_ratio = 768
+
+class AdapterConfig(BaseConfig):
+  def __init__(self):
+    super().__init__()
+    self.output_dim = 10
 ```
 
-### Training and Pretraining
-By editing `PRETRAINING` in `train.py`, you can select how to train the model on the MNIST dataset. It includes the training loop, evaluation, and saving the model checkpoints.
+### Pretraining
+`pretrain.py` is to pretrain the model on the MNIST dataset with SSL.
 
 ```python
-PRETRAINING = True
-
-# TRANSFER LEARNING ON BASELINE MODEL
-if __name__ == "__main__" and not PRETRAINING:
-  config = Config()
+if __name__ == "__main__":
+  config = BaseConfig()
   device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-  # load dataset, transform from folder
-  mnist_10_transform = get_transform_MNIST_10(input_size=90)
-  trainset, testset = load_MNIST_10(path='./data', transform=mnist_10_transform)
-  # embed dataset (3 times 3 patches)
-  trainset = Embedder(dataset=trainset, config=config).consolidate()
+  mnist_transform = get_transform_MNIST(input_size=90)
+  traindata, _ = load_MNIST(path='./data', transform=mnist_transform, len=(10000, 1000))
+  trainset = Masker(dataset=traindata, config=config).consolidate()
   config.dummy = trainset.__getitem__(0)[0]
-  trainset = DataLoader(dataset=trainset, batch_size=config.batch_size)
-  testset = Embedder(dataset=testset, config=config).consolidate()
-  testset = DataLoader(dataset=testset, batch_size=config.batch_size)
-  model = ViT(config=config)
-  train(model=model, path=TEACH_SAVE_TO, config=config, trainset=trainset, device=device)
-  evaluate(model=model, dataset=testset, device=device)
-# if __name__ == "__main__":
+  trainloader = DataLoader(dataset=trainset, batch_size=config.batch_size)
+  model = ViTBase(config=config)
+  train(model=model, path=BASE_SAVE_TO, config=config, trainset=trainloader, device=device)
+```
 
-# PRETRAINING
-if __name__ == "__main__" and PRETRAINING:
-  config = Config()
+### Training
+`train.py` is to pretrain the model on the MNIST dataset with Transfer Learning.
+
+```python
+if __name__ == "__main__":
+  base_config = BaseConfig()
+  adapter_config = AdapterConfig()
   device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-  # load dataset, transform from folder
-  mnist_10_transform = get_transform_MNIST_10(input_size=90)
-  trainset, testset = load_MNIST_10(path='./data', transform=mnist_10_transform)
-  # embed dataset (3 times 3 patches)
-  trainset = Masker(dataset=trainset, config=config).consolidate()
-  config.dummy = trainset.__getitem__(0)[0]
-  trainset = DataLoader(dataset=trainset, batch_size=config.batch_size)
-  # testset = Embedder(dataset=testset, config=config).consolidate()
-  # testset = DataLoader(dataset=testset, batch_size=config.batch_size)
-  model = ViT(config=config)
-  train(model=model, path=TEACH_SAVE_TO, config=config, trainset=trainset, device=device)
-# if __name__ == "__main__":
+  mnist_10_transform = get_transform_MNIST(input_size=90)
+  traindata, testdata = load_MNIST(path='./data', transform=mnist_10_transform, len=(10000, 1000))
+  trainset = Embedder(dataset=traindata, config=base_config).consolidate()
+  base_config.dummy = trainset.__getitem__(0)[0]
+  trainloader = DataLoader(dataset=trainset, batch_size=base_config.batch_size)
+  testset = Embedder(dataset=testdata, config=base_config).consolidate()
+  testloader = DataLoader(dataset=testset, batch_size=base_config.batch_size)
+  data = torch.load(f=f"{BASE_LOAD_FROM}", weights_only=False, map_location=device)
+  base = ViTBase(base_config).load_state_dict(data['state'])
+  model = Adapter(config=adapter_config, base=base)
+  train(model=model, path=PRETRAINED_SAVE_TO, config=adapter_config, trainset=trainloader, device=device)
+  evaluate(model=model, dataset=testloader, device=device)
 ```
 
 ### Evaluation
-`eval.py` is used to evaluate the trained model on the MNIST-10 dataset. It loads the model and embedder, processes the dataset, and computes the accuracy of the model.
+`evaluate.py` is used to evaluate the trained model on the MNIST-10 dataset. It loads the model and embedder, processes the dataset, and computes the accuracy of the model.
 
 ```python
 if __name__ == "__main__":
   device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-  config = Config()
-  # load dataset, transform from folder
-  cifar_10_transform = get_transform_CIFAR_10(input_size=90)
-  trainset, testset = load_CIFAR_10(path='./data', transform=cifar_10_transform)
-  # embed dataset (3 times 3 patches)
-  trainset = Embedder(dataset=trainset, config=config).consolidate()
-  config.dummy = trainset.__getitem__(0)[0]
-  trainset = DataLoader(dataset=trainset, batch_size=config.batch_size)
-  testset = Embedder(dataset=testset, config=config).consolidate()
-  testset = DataLoader(dataset=testset, batch_size=config.batch_size)
-  model_data = torch.load(f=TEACH_LOAD_FROM, map_location=torch.device('cpu'), weights_only=False)
-  model = ViT(config)
-  model.load_state_dict(model_data['sate'])
-  evaluate(model=model, dataset=testset, device=device)
+  base_config = BaseConfig()
+  adapter_config = AdapterConfig()
+  mnist_10_transform = get_transform_MNIST(input_size=90)
+  _, testdata = load_MNIST(path='./data', transform=mnist_10_transform, len=(1, 1000))
+  testset = Embedder(dataset=testdata, config=base_config).consolidate()
+  base_config.dummy = testset.__getitem__(0)[0]
+  testloader = DataLoader(dataset=testset, batch_size=base_config.batch_size)
+  base_data = torch.load(f=BASE_LOAD_FROM, map_location=torch.device('cpu'), weights_only=True)
+  base = ViTBase(base_config)
+  base.load_state_dict(base_data['sate'])
+  adapter_data = torch.load(f=PRETRAINED_FROM, map_location=torch.device('cpu'), weights_only=True)
+  adapter = Adapter(adapter_config, base=base)
+  evaluate(model=adapter, dataset=testloader, device=device)
 ```
