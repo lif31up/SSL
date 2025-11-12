@@ -4,7 +4,9 @@ from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from Embedder import load_MNIST_10, Embedder
+from Masker import Masker
 from config import Config, TEACH_SAVE_TO
+from evaluate import evaluate
 from model.ViT import ViT
 from utils import get_transform_MNIST_10
 
@@ -39,7 +41,10 @@ def train(model:nn.Module, path: str, config: Config, trainset, device):
   torch.save(features, f"{path}")
 # train
 
-if __name__ == "__main__":
+PRETRAINING = True
+
+# TRANSFER LEARNING ON BASELINE MODEL
+if __name__ == "__main__" and not PRETRAINING:
   config = Config()
   device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
   # load dataset, transform from folder
@@ -51,6 +56,24 @@ if __name__ == "__main__":
   trainset = DataLoader(dataset=trainset, batch_size=config.batch_size)
   testset = Embedder(dataset=testset, config=config).consolidate()
   testset = DataLoader(dataset=testset, batch_size=config.batch_size)
+  model = ViT(config=config)
+  train(model=model, path=TEACH_SAVE_TO, config=config, trainset=trainset, device=device)
+  evaluate(model=model, dataset=testset, device=device)
+# if __name__ == "__main__":
+
+# PRETRAINING
+if __name__ == "__main__" and PRETRAINING:
+  config = Config()
+  device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+  # load dataset, transform from folder
+  mnist_10_transform = get_transform_MNIST_10(input_size=90)
+  trainset, testset = load_MNIST_10(path='./data', transform=mnist_10_transform)
+  # embed dataset (3 times 3 patches)
+  trainset = Masker(dataset=trainset, config=config).consolidate()
+  config.dummy = trainset.__getitem__(0)[0]
+  trainset = DataLoader(dataset=trainset, batch_size=config.batch_size)
+  # testset = Embedder(dataset=testset, config=config).consolidate()
+  # testset = DataLoader(dataset=testset, batch_size=config.batch_size)
   model = ViT(config=config)
   train(model=model, path=TEACH_SAVE_TO, config=config, trainset=trainset, device=device)
 # if __name__ == "__main__":
